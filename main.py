@@ -6,24 +6,34 @@ import threading
 from dotenv import load_dotenv
 from flask import Flask
 import vonage
-from vonage_sms import SmsMessage
+from vonage_messages import MmsText
 
 load_dotenv()
 token = os.getenv("token")
 
 # Vonage API credentials (check both lowercase and uppercase, strip whitespace)
+# Messages API uses JWT authentication with application_id and private_key
+vonage_application_id = (os.getenv("VONAGE_APPLICATION_ID") or os.getenv("vonage_application_id") or "").strip()
+vonage_private_key = (os.getenv("VONAGE_PRIVATE_KEY") or os.getenv("vonage_private_key") or "").strip()
+# Fallback to API key/secret if application credentials not available
 vonage_api_key = (os.getenv("VONAGE_API_KEY") or os.getenv("vonage_api_key") or "").strip()
 vonage_api_secret = (os.getenv("VONAGE_API_SECRET") or os.getenv("vonage_api_secret") or "").strip()
 vonage_phone_number = (os.getenv("VONAGE_PHONE_NUMBER") or os.getenv("vonage_phone_number") or "").strip()
 recipient_phone_number = (os.getenv("RECIPIENT_PHONE_NUMBER") or os.getenv("recipient_phone_number") or "").strip()
 
-# Initialize Vonage client
-if vonage_api_key and vonage_api_secret:
+# Initialize Vonage client for Messages API
+# Prefer JWT authentication (application_id + private_key) for Messages API
+if vonage_application_id and vonage_private_key:
+    auth = vonage.Auth(application_id=vonage_application_id, private_key=vonage_private_key)
+    vonage_client = vonage.Vonage(auth=auth)
+elif vonage_api_key and vonage_api_secret:
+    # Fallback to API key/secret (may not work for Messages API, but try anyway)
     auth = vonage.Auth(api_key=vonage_api_key, api_secret=vonage_api_secret)
     vonage_client = vonage.Vonage(auth=auth)
+    print("Warning: Using API key/secret. Messages API prefers JWT authentication with application_id and private_key.")
 else:
     vonage_client = None
-    print("Warning: Vonage credentials not found. SMS functionality will be disabled.")
+    print("Warning: Vonage credentials not found. MMS functionality will be disabled.")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True  # Required to read message content and process commands
@@ -39,36 +49,58 @@ async def on_ready():
   await client.change_presence(activity=discord.watching(name=" the AI & Data Science Club!"))
   print('Ready!')
 
-async def send_sms(text_message):
-    """Send SMS via Vonage SDK"""
+async def send_mms(text_message):
+    """Send MMS text message via Vonage Messages API"""
     if not vonage_client or not recipient_phone_number or not vonage_phone_number:
-        print("SMS not configured - skipping SMS send")
+        print("MMS not configured - skipping MMS send")
         return
     
     try:
         # Run synchronous SDK call in executor to avoid blocking event loop
-        def _send_sms():
-            message = SmsMessage(
-                to=recipient_phone_number.replace('+', ''),  # Remove + if present
-                from_=vonage_phone_number,
+        def _send_mms():
+            # Format phone numbers (remove + if present, as per Vonage documentation)
+            # Don't use leading + or 00, start with country code (e.g., 14155550105)
+            to_number = recipient_phone_number.replace('+', '')
+            if to_number.startswith('00'):
+                to_number = to_number[2:]
+            from_number = vonage_phone_number.replace('+', '')
+            if from_number.startswith('00'):
+                from_number = from_number[2:]
+            
+            # Create MMS text message using vonage_messages package
+            message = MmsText(
+                to=to_number,
+                from_=from_number,
                 text=text_message
             )
-            response = vonage_client.sms.send(message)
+            
+            response = vonage_client.messages.send(message)
             return response
         
-        response = await asyncio.get_event_loop().run_in_executor(None, _send_sms)
+        response = await asyncio.get_event_loop().run_in_executor(None, _send_mms)
         
         # Check response status
-        response_dict = response.model_dump(exclude_unset=True)
-        messages = response_dict.get('messages', [])
-        if messages and messages[0].get('status') == '0':
-            print("Message sent successfully.")
+        # Messages API returns a response with message_uuid on success
+        if hasattr(response, 'message_uuid'):
+            print(f"MMS message sent successfully. Message UUID: {response.message_uuid}")
+        elif hasattr(response, 'model_dump'):
+            response_dict = response.model_dump(exclude_unset=True)
+            if response_dict.get('message_uuid'):
+                print(f"MMS message sent successfully. Message UUID: {response_dict.get('message_uuid')}")
+            else:
+                error_text = response_dict.get('error_text', 'Unknown error') or response_dict.get('error-text', 'Unknown error')
+                print(f"MMS message failed with error: {error_text}")
+        elif isinstance(response, dict):
+            if response.get('message_uuid'):
+                print(f"MMS message sent successfully. Message UUID: {response.get('message_uuid')}")
+            else:
+                error_text = response.get('error_text', 'Unknown error') or response.get('error-text', 'Unknown error')
+                print(f"MMS message failed with error: {error_text}")
         else:
-            error_text = messages[0].get('error-text', 'Unknown error') if messages else 'No messages in response'
-            print(f"Message failed with error: {error_text}")
+            print(f"MMS message response: {response}")
             
     except Exception as e:
-        print(f"Error sending SMS: {e}")
+        print(f"Error sending MMS: {e}")
         import traceback
         traceback.print_exc()
 
@@ -79,8 +111,8 @@ async def on_message(message):
   # Check if message is in the specific guild
   if message.guild and message.guild.id == 1405628370301091860:
     print(message.content, message.channel.name, message.author.name)
-    sms_message = f"[Discord] {message.author.name} in #{message.channel.name}: {message.content[:160]}"  # SMS has 160 char limit per segment
-    await send_sms(sms_message)
+    mms_message = f"[Discord] {message.author.name} in #{message.channel.name}: {message.content[:1600]}"  # MMS supports up to 1600 characters for text
+    await send_mms(mms_message)
   await client.process_commands(message)
 
 @client.event
