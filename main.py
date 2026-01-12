@@ -6,34 +6,21 @@ import threading
 from dotenv import load_dotenv
 from flask import Flask
 import vonage
-from vonage_messages import MmsText
+import requests
+import base64
+import json
 
 load_dotenv()
 token = os.getenv("token")
 
-# Vonage API credentials (check both lowercase and uppercase, strip whitespace)
-# Messages API uses JWT authentication with application_id and private_key
-vonage_application_id = (os.getenv("VONAGE_APPLICATION_ID") or os.getenv("vonage_application_id") or "").strip()
-vonage_private_key = (os.getenv("VONAGE_PRIVATE_KEY") or os.getenv("vonage_private_key") or "").strip()
-# Fallback to API key/secret if application credentials not available
-vonage_api_key = (os.getenv("VONAGE_API_KEY") or os.getenv("vonage_api_key") or "").strip()
-vonage_api_secret = (os.getenv("VONAGE_API_SECRET") or os.getenv("vonage_api_secret") or "").strip()
-vonage_phone_number = (os.getenv("VONAGE_PHONE_NUMBER") or os.getenv("vonage_phone_number") or "").strip()
-recipient_phone_number = (os.getenv("RECIPIENT_PHONE_NUMBER") or os.getenv("recipient_phone_number") or "").strip()
+# Vonage API credentials (using the required environment variables)
+vonage_api_key = (os.getenv("VONAGE_API_KEY"))
+vonage_api_secret = (os.getenv("VONAGE_API_SECRET"))
+vonage_phone_number = (os.getenv("VONAGE_FROM_NUMBER"))
+recipient_phone_number = (os.getenv("RECIPIENT_PHONE_NUMBER"))
+print(vonage_api_key, vonage_api_secret, vonage_phone_number, recipient_phone_number)
 
-# Initialize Vonage client for Messages API
-# Prefer JWT authentication (application_id + private_key) for Messages API
-if vonage_application_id and vonage_private_key:
-    auth = vonage.Auth(application_id=vonage_application_id, private_key=vonage_private_key)
-    vonage_client = vonage.Vonage(auth=auth)
-elif vonage_api_key and vonage_api_secret:
-    # Fallback to API key/secret (may not work for Messages API, but try anyway)
-    auth = vonage.Auth(api_key=vonage_api_key, api_secret=vonage_api_secret)
-    vonage_client = vonage.Vonage(auth=auth)
-    print("Warning: Using API key/secret. Messages API prefers JWT authentication with application_id and private_key.")
-else:
-    vonage_client = None
-    print("Warning: Vonage credentials not found. MMS functionality will be disabled.")
+# Using direct HTTP requests with Basic Auth - no need to initialize Vonage client
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True  # Required to read message content and process commands
@@ -49,35 +36,66 @@ async def on_ready():
   await client.change_presence(activity=discord.watching(name=" the AI & Data Science Club!"))
   print('Ready!')
 
-async def send_mms(text_message):
-    """Send MMS text message via Vonage Messages API"""
-    if not vonage_client or not recipient_phone_number or not vonage_phone_number:
-        print("MMS not configured - skipping MMS send")
+async def send_sms(text_message):
+    """Send text-only MMS via Vonage Messages API using image message_type with null URL
+    This avoids the '[FREE SMS DEMO, TEST MESSAGE]' prefix that appears with SMS
+    """
+    if not vonage_api_key or not vonage_api_secret or not recipient_phone_number or not vonage_phone_number:
+        print("MMS not configured - missing required environment variables")
+        print("Required: VONAGE_API_KEY, VONAGE_API_SECRET, VONAGE_FROM_NUMBER, RECIPIENT_PHONE_NUMBER")
         return
     
     try:
         # Run synchronous SDK call in executor to avoid blocking event loop
-        def _send_mms():
+        def _send_sms():
             # Format phone numbers (remove + if present, as per Vonage documentation)
             # Don't use leading + or 00, start with country code (e.g., 14155550105)
-            to_number = recipient_phone_number.replace('+', '')
-            if to_number.startswith('00'):
-                to_number = to_number[2:]
-            from_number = vonage_phone_number.replace('+', '')
-            if from_number.startswith('00'):
-                from_number = from_number[2:]
+            to_number = recipient_phone_number
+            from_number = vonage_phone_number
             
-            # Create MMS text message using vonage_messages package
-            message = MmsText(
-                to=to_number,
-                from_=from_number,
-                text=text_message
+            # For MMS text messages, use the simple structure
+            message_data = {
+                "message_type": "text",
+                "text": text_message,
+                "to": to_number,
+                "from": "14258189935",
+                "channel": "mms"
+            }
+            
+            # Use Basic Auth (API key/secret) - this is what the example code uses
+            if not vonage_api_key or not vonage_api_secret:
+                raise Exception("API key and secret required for MMS messages")
+            
+            credentials = f"{vonage_api_key}:{vonage_api_secret}"
+            encoded_credentials = base64.b64encode(credentials.encode()).decode()
+            
+            response = requests.post(
+                "https://api.nexmo.com/v1/messages",
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Authorization": f"Basic {encoded_credentials}"
+                },
+                json=message_data
             )
             
-            response = vonage_client.messages.send(message)
-            return response
+            if not response.ok:
+                error_data = response.json()
+                print(f"Full error response: {error_data}")
+                error_detail = error_data.get('detail', 'Unknown error')
+                
+                if response.status_code == 401:
+                    raise Exception(
+                        f"Authentication failed (401): {error_detail}. "
+                        "Check that your VONAGE_API_KEY and VONAGE_API_SECRET are correct, "
+                        "and that your account has MMS messaging enabled. "
+                        "You may need to enable MMS in your Vonage account settings."
+                    )
+                raise Exception(f"Message failed: {response.status_code} - {error_detail}")
+            
+            return response.json()
         
-        response = await asyncio.get_event_loop().run_in_executor(None, _send_mms)
+        response = await asyncio.get_event_loop().run_in_executor(None, _send_sms)
         
         # Check response status
         # Messages API returns a response with message_uuid on success
@@ -109,10 +127,10 @@ async def on_message(message):
   if message.author == client.user:
     return
   # Check if message is in the specific guild
-  if message.guild and message.guild.id == 1405628370301091860:
+  if message.guild and message.guild.id == 764284315906736128:
     print(message.content, message.channel.name, message.author.name)
-    mms_message = f"[Discord] {message.author.name} in #{message.channel.name}: {message.content[:1600]}"  # MMS supports up to 1600 characters for text
-    await send_mms(mms_message)
+    sms_message = f"[Discord] {message.author.name} in #{message.channel.name}: {message.content[:1600]}"  # SMS supports longer messages via concatenation
+    await send_sms(sms_message)
   await client.process_commands(message)
 
 @client.event
