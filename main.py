@@ -204,18 +204,19 @@ def home():
 def health():
     return {"status": "ok", "bot": "online"}, 200
 
-def run_flask():
-    port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+def run_bot():
+    """Run Discord bot in background thread"""
+    async def bot_main():
+        async with client:
+            await client.start(token)
+    asyncio.run(bot_main())
 
-async def main():
-    async with client:
-        await client.start(token)
+# Start Discord bot in background thread when module loads
+bot_thread = threading.Thread(target=run_bot, daemon=True)
+bot_thread.start()
 
+# For local development
 if __name__ == "__main__":
-    # Run Flask in a separate thread
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    # Run Discord bot
-    asyncio.run(main())
+    port = int(os.getenv('PORT', 5000))
+    print(f"Starting Flask server on port {port}...")
+    app.run(host='0.0.0.0', port=port, debug=False)
