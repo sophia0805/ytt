@@ -246,47 +246,24 @@ async def snipe(ctx):
 # Flask app for keeping the bot alive on Render
 app = Flask(__name__)
 
-@app.route('/', methods=['GET', 'HEAD'])
+@app.route('/')
 def home():
     return "Bot is running!"
 
-@app.route('/health', methods=['GET', 'HEAD'])
+@app.route('/health')
 def health():
     return {"status": "ok", "bot": "online"}, 200
 
-@app.route('/test', methods=['GET', 'HEAD'])
-def test():
-    return {"message": "Flask is working!", "app": "main"}, 200
-
-# Catch-all route for debugging
-@app.errorhandler(404)
-def not_found(e):
-    return {"error": "Not Found", "message": "Route not found. Available routes: /, /health, /test"}, 404
-
 def run_bot():
     """Run Discord bot in background thread"""
-    try:
-        async def bot_main():
-            async with client:
-                await client.start(token)
-        asyncio.run(bot_main())
-    except Exception as e:
-        print(f"Error starting Discord bot: {e}")
-        import traceback
-        traceback.print_exc()
+    async def bot_main():
+        async with client:
+            await client.start(token)
+    asyncio.run(bot_main())
 
-# Initialize bot thread after Flask app is set up
-# Delay bot start slightly to ensure Flask is ready
-def start_bot_thread():
-    if token:
-        bot_thread = threading.Thread(target=run_bot, daemon=True)
-        bot_thread.start()
-        print("Discord bot thread started")
-    else:
-        print("Warning: No Discord token found, bot will not start")
-
-# Start bot thread when module loads (but after Flask routes are registered)
-start_bot_thread()
+# Start Discord bot in background thread when module loads
+bot_thread = threading.Thread(target=run_bot, daemon=True)
+bot_thread.start()
 
 # For local development
 if __name__ == "__main__":
