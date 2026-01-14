@@ -5,25 +5,26 @@ import asyncio
 import threading
 from dotenv import load_dotenv
 from flask import Flask
-import vonage
-from vonage_sms import SmsMessage
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 load_dotenv()
 token = os.getenv("token")
 
-# Vonage API credentials (check both lowercase and uppercase, strip whitespace)
-vonage_api_key = (os.getenv("VONAGE_API_KEY") or os.getenv("vonage_api_key") or "").strip()
-vonage_api_secret = (os.getenv("VONAGE_API_SECRET") or os.getenv("vonage_api_secret") or "").strip()
-vonage_phone_number = (os.getenv("VONAGE_PHONE_NUMBER") or os.getenv("vonage_phone_number") or "").strip()
-recipient_phone_number = (os.getenv("RECIPIENT_PHONE_NUMBER") or os.getenv("recipient_phone_number") or "").strip()
+# Email configuration (check both lowercase and uppercase, strip whitespace)
+smtp_server = (os.getenv("SMTP_SERVER") or os.getenv("smtp_server") or "smtp.gmail.com").strip()
+smtp_port = int(os.getenv("SMTP_PORT") or os.getenv("smtp_port") or "587")
+email_address = (os.getenv("EMAIL_ADDRESS") or os.getenv("email_address") or "").strip()
+email_password = (os.getenv("EMAIL_PASSWORD") or os.getenv("email_password") or "").strip()
+recipient_email = (os.getenv("RECIPIENT_EMAIL") or os.getenv("recipient_email") or "").strip()
 
-# Initialize Vonage client
-if vonage_api_key and vonage_api_secret:
-    auth = vonage.Auth(api_key=vonage_api_key, api_secret=vonage_api_secret)
-    vonage_client = vonage.Vonage(auth=auth)
+# Check if email credentials are configured
+if email_address and email_password and recipient_email:
+    email_configured = True
 else:
-    vonage_client = None
-    print("Warning: Vonage credentials not found. SMS functionality will be disabled.")
+    email_configured = False
+    print("Warning: Email credentials not found. Email functionality will be disabled.")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True  # Required to read message content and process commands
@@ -39,36 +40,45 @@ async def on_ready():
   await client.change_presence(activity=discord.watching(name=" the AI & Data Science Club!"))
   print('Ready!')
 
-async def send_sms(text_message):
-    """Send SMS via Vonage SDK"""
-    if not vonage_client or not recipient_phone_number or not vonage_phone_number:
-        print("SMS not configured - skipping SMS send")
+async def send_email(message_content):
+    """Send email notification"""
+    if not email_configured:
+        print("Email not configured - skipping email send")
         return
     
     try:
-        # Run synchronous SDK call in executor to avoid blocking event loop
-        def _send_sms():
-            message = SmsMessage(
-                to=recipient_phone_number.replace('+', ''),  # Remove + if present
-                from_=vonage_phone_number,
-                text=text_message
-            )
-            response = vonage_client.sms.send(message)
-            return response
+        # Run synchronous email send in executor to avoid blocking event loop
+        def _send_email():
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = email_address
+            msg['To'] = recipient_email
+            msg['Subject'] = "Discord Message Notification"
+            
+            # Add body to email
+            msg.attach(MIMEText(message_content, 'plain'))
+            
+            # Create SMTP session
+            server = smtplib.SMTP(smtp_server, smtp_port)
+            server.starttls()  # Enable TLS encryption
+            server.login(email_address, email_password)
+            
+            # Send email
+            text = msg.as_string()
+            server.sendmail(email_address, recipient_email, text)
+            server.quit()
+            
+            return True
         
-        response = await asyncio.get_event_loop().run_in_executor(None, _send_sms)
+        success = await asyncio.get_event_loop().run_in_executor(None, _send_email)
         
-        # Check response status
-        response_dict = response.model_dump(exclude_unset=True)
-        messages = response_dict.get('messages', [])
-        if messages and messages[0].get('status') == '0':
-            print("Message sent successfully.")
+        if success:
+            print("Email sent successfully.")
         else:
-            error_text = messages[0].get('error-text', 'Unknown error') if messages else 'No messages in response'
-            print(f"Message failed with error: {error_text}")
+            print("Email failed to send.")
             
     except Exception as e:
-        print(f"Error sending SMS: {e}")
+        print(f"Error sending email: {e}")
         import traceback
         traceback.print_exc()
 
@@ -79,8 +89,8 @@ async def on_message(message):
   # Check if message is in the specific guild
   if message.guild and message.guild.id == 1405628370301091860:
     print(message.content, message.channel.name, message.author.name)
-    sms_message = f"[Discord] {message.author.name} in #{message.channel.name}: {message.content[:160]}"  # SMS has 160 char limit per segment
-    await send_sms(sms_message)
+    email_message = f"[Discord] {message.author.name} in #{message.channel.name}:\n\n{message.content}"
+    await send_email(email_message)
   await client.process_commands(message)
 
 @client.event
