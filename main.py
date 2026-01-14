@@ -13,11 +13,11 @@ load_dotenv()
 token = os.getenv("token")
 
 # Email configuration (check both lowercase and uppercase, strip whitespace)
-smtp_server = (os.getenv("SMTP_SERVER") or os.getenv("smtp_server") or "smtp.gmail.com").strip()
-smtp_port = int(os.getenv("SMTP_PORT") or os.getenv("smtp_port") or "587")
-email_address = (os.getenv("EMAIL_ADDRESS") or os.getenv("email_address") or "").strip()
-email_password = (os.getenv("EMAIL_PASSWORD") or os.getenv("email_password") or "").strip()
-recipient_email = (os.getenv("RECIPIENT_EMAIL") or os.getenv("recipient_email") or "").strip()
+smtp_server = os.getenv("SMTP_SERVER")
+smtp_port = int(os.getenv("SMTP_PORT"))
+email_address = os.getenv("EMAIL_ADDRESS")
+email_password = os.getenv("EMAIL_PASSWORD")
+recipient_email = os.getenv("RECIPIENT_EMAIL")
 
 # Check if email credentials are configured
 if email_address and email_password and recipient_email:
@@ -95,7 +95,7 @@ async def on_message(message):
     timestamp = message.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
     subject = f"[Discord] #{message.channel.name} - {message.author.name}"
     email_message = (
-      f"Message: {message.content}"
+      f"{message.content}"
       "-------------------\n"
       f"Channel: #{message.channel.name} (ID: {message.channel.id})\n"
       f"Author : {message.author} (ID: {message.author.id})\n"
@@ -238,21 +238,36 @@ def not_found(e):
 
 def run_bot():
     """Run Discord bot in background thread"""
+    import time
+    # Small delay to ensure Flask is fully initialized
+    time.sleep(2)
+    
     try:
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         async def bot_main():
             async with client:
                 await client.start(token)
-        asyncio.run(bot_main())
+        
+        loop.run_until_complete(bot_main())
     except Exception as e:
         print(f"Error starting Discord bot: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        # Clean up the event loop
+        try:
+            loop.close()
+        except:
+            pass
 
 # Initialize bot thread after Flask app is set up
 # Delay bot start slightly to ensure Flask is ready
 def start_bot_thread():
     if token:
-        bot_thread = threading.Thread(target=run_bot, daemon=True)
+        bot_thread = threading.Thread(target=run_bot, daemon=True, name="DiscordBot")
         bot_thread.start()
         print("Discord bot thread started")
     else:
