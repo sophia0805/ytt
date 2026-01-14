@@ -5,29 +5,33 @@ import asyncio
 import threading
 from dotenv import load_dotenv
 from flask import Flask
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import aiohttp
+import json
 
 load_dotenv()
 token = os.getenv("token")
 
-# Email configuration (check both lowercase and uppercase, strip whitespace)
-smtp_server = os.getenv("SMTP_SERVER")
-smtp_port = int(os.getenv("SMTP_PORT"))
-email_address = os.getenv("EMAIL_ADDRESS")
-email_password = os.getenv("EMAIL_PASSWORD")
-recipient_email = os.getenv("RECIPIENT_EMAIL")
+# Maileroo API configuration
+maileroo_api_key = os.getenv("MAILEROO_API_KEY")
+maileroo_from_email = os.getenv("MAILEROO_FROM_EMAIL")
+maileroo_from_name = os.getenv("MAILEROO_FROM_NAME", "Discord Bot")
+maileroo_to_email = os.getenv("MAILEROO_TO_EMAIL")
+maileroo_api_url = os.getenv("MAILEROO_API_URL", "https://smtp.maileroo.com/api/v2/emails")
 
-# Check if email credentials are configured
-if email_address and email_password and recipient_email:
+# Check if Maileroo credentials are configured
+if maileroo_api_key and maileroo_from_email and maileroo_to_email:
     email_configured = True
+    print("Maileroo API configured")
 else:
     email_configured = False
-    print("Warning: Email credentials not found. Email functionality will be disabled.")
+    print("Warning: Maileroo API credentials not found. Email functionality will be disabled.")
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True  # Required to read message content and process commands
+
+# Configure Discord client
+# Note: PythonAnywhere free tier restricts outbound HTTPS connections
+# You may need to upgrade to paid tier or use a different hosting service
 client = commands.Bot(command_prefix="soph ", intents=intents, case_insensitive=True)
 
 async def isSophia(ctx):
@@ -41,47 +45,57 @@ async def on_ready():
   print('Ready!')
 
 async def send_email(subject, message_content):
-    """Send email notification with a nicer format"""
+    """Send email notification using Maileroo API"""
     if not email_configured:
         print("Email not configured - skipping email send")
         return
     
     try:
-        # Run synchronous email send in executor to avoid blocking event loop
-        def _send_email():
-            # Create message
-            msg = MIMEMultipart()
-            msg['From'] = email_address
-            msg['To'] = recipient_email
-            # Fallback subject if none is provided
-            msg['Subject'] = subject or "Discord Message Notification"
-            
-            # Add body to email
-            msg.attach(MIMEText(message_content, 'plain'))
-            
-            # Create SMTP session
-            server = smtplib.SMTP(smtp_server, smtp_port)
-            server.starttls()  # Enable TLS encryption
-            server.login(email_address, email_password)
-            
-            # Send email
-            text = msg.as_string()
-            server.sendmail(email_address, recipient_email, text)
-            server.quit()
-            
-            return True
+        # Prepare Maileroo API payload according to their API format
+        payload = {
+            "from": {
+                "address": maileroo_from_email,
+                "display_name": maileroo_from_name
+            },
+            "to": {
+                "address": maileroo_to_email
+            },
+            "subject": subject or "Discord Message Notification",
+            "plain": message_content  # Using plain text format
+        }
         
-        success = await asyncio.get_event_loop().run_in_executor(None, _send_email)
+        headers = {
+            "Authorization": f"Bearer {maileroo_api_key}",
+            "Content-Type": "application/json"
+        }
         
-        if success:
-            print("Email sent successfully.")
-        else:
-            print("Email failed to send.")
+        # Send email via Maileroo API
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                maileroo_api_url,
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
+                response_data = await response.json()
+                
+                if response.status == 200 and response_data.get("success"):
+                    reference_id = response_data.get("data", {}).get("reference_id", "N/A")
+                    print(f"Email sent successfully via Maileroo. Reference ID: {reference_id}")
+                    return True
+                else:
+                    error_msg = response_data.get("message", "Unknown error")
+                    print(f"Maileroo API error: {response.status} - {error_msg}")
+                    return False
             
+    except aiohttp.ClientError as e:
+        print(f"Network error sending email via Maileroo: {e}")
+        return False
     except Exception as e:
-        print(f"Error sending email: {e}")
+        print(f"Error sending email via Maileroo: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 @client.event
 async def on_message(message):
@@ -216,7 +230,7 @@ async def snipe(ctx):
       embed.set_footer(text= f"Snipe requested by {ctx.author.name}")
       await ctx.send(embed=embed)
 
-# Flask app for keeping the bot alive on Render
+# Flask app for keeping the bot alive (works on Deta, Render, PythonAnywhere, etc.)
 app = Flask(__name__)
 
 @app.route('/', methods=['GET', 'HEAD'])
@@ -277,7 +291,8 @@ def start_bot_thread():
 start_bot_thread()
 
 # For local development
+# Note: Deta automatically runs the app, so this is only for local testing
 if __name__ == "__main__":
-    port = int(os.getenv('PORT', 5000))
+    port = int(os.getenv('PORT', 8080))  # Deta uses 8080 by default
     print(f"Starting Flask server on port {port}...")
     app.run(host='0.0.0.0', port=port, debug=False)
