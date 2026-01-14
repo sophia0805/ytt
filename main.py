@@ -40,8 +40,8 @@ async def on_ready():
   await client.change_presence(activity=discord.watching(name=" the AI & Data Science Club!"))
   print('Ready!')
 
-async def send_email(message_content):
-    """Send email notification"""
+async def send_email(subject, message_content):
+    """Send email notification with a nicer format"""
     if not email_configured:
         print("Email not configured - skipping email send")
         return
@@ -53,7 +53,8 @@ async def send_email(message_content):
             msg = MIMEMultipart()
             msg['From'] = email_address
             msg['To'] = recipient_email
-            msg['Subject'] = "Discord Message Notification"
+            # Fallback subject if none is provided
+            msg['Subject'] = subject or "Discord Message Notification"
             
             # Add body to email
             msg.attach(MIMEText(message_content, 'plain'))
@@ -89,8 +90,20 @@ async def on_message(message):
   # Check if message is in the specific guild
   if message.guild and message.guild.id == 1405628370301091860:
     print(message.content, message.channel.name, message.author.name)
-    email_message = f"[Discord] {message.author.name} in #{message.channel.name}:\n\n{message.content}"
-    await send_email(email_message)
+
+    # Build a nicely formatted email
+    timestamp = message.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+    subject = f"[Discord] #{message.channel.name} - {message.author.name}"
+    email_message = (
+      f"Message: {message.content}"
+      "-------------------\n"
+      f"Channel: #{message.channel.name} (ID: {message.channel.id})\n"
+      f"Author : {message.author} (ID: {message.author.id})\n"
+      f"Time   : {timestamp}\n"
+      f"Link   : {message.jump_url}\n"
+      "\n"
+    )
+    await send_email(subject, email_message)
   await client.process_commands(message)
 
 @client.event
