@@ -52,13 +52,18 @@ async def isSophia(ctx):
 # Sophia's user IDs (primary and secondary)
 SOPHIA_USER_IDS = [704038199776903209, 701792352301350973]
 PRIMARY_SOPHIA_ID = 704038199776903209  # Primary user ID for webhook avatar
+
+# Store bot's event loop for use in Flask routes
+bot_loop = None
  
 client.snipes = {}
 
 @client.event
 async def on_ready():
+  global bot_loop
+  bot_loop = asyncio.get_running_loop()
   await client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=" the AI & Data Science Club!"))
-  print('Ready!')
+  print(f'Ready! Bot loop stored: {bot_loop is not None}')
 
 async def send_email(subject, message_content):
     """Send email notification using Maileroo API"""
@@ -143,7 +148,7 @@ async def get_or_create_sophia_webhook(channel):
     """Get or create a webhook named 'sophia' in the channel"""
     try:
         # Try to find existing webhook named "sophia"
-        webhooks = [webhook async for webhook in channel.webhooks()]
+        webhooks = [webhook async for webhook in channel.webhooks]
         sophia_webhook = discord.utils.get(webhooks, name="sophia")
         
         if sophia_webhook:
@@ -441,15 +446,16 @@ def email_webhook():
             max_wait = 15
             waited = 0
             while waited < max_wait:
-                if client.is_ready() and client.loop and not client.loop.is_closed():
+                if client.is_ready() and bot_loop and not bot_loop.is_closed():
                     break
                 time.sleep(0.5)
                 waited += 0.5
             
-            if not client.is_ready() or not client.loop or client.loop.is_closed():
+            if not client.is_ready() or not bot_loop or bot_loop.is_closed():
+                print(f"DEBUG: is_ready={client.is_ready()}, bot_loop={bot_loop}, closed={bot_loop.is_closed() if bot_loop else 'N/A'}")
                 return {"status": "error", "message": "Bot not ready yet"}, 503
             
-            # Schedule the coroutine using the client's event loop
+            # Schedule the coroutine using the bot's event loop
             def handle_result(future):
                 try:
                     future.result()
@@ -470,7 +476,7 @@ def email_webhook():
                     domain=domain,
                     is_spam=is_spam
                 ),
-                client.loop
+                bot_loop
             )
             future.add_done_callback(handle_result)
             
