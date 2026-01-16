@@ -57,7 +57,7 @@ client.snipes = {}
 
 @client.event
 async def on_ready():
-  await client.change_presence(activity=discord.watching(name=" the AI & Data Science Club!"))
+  await client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name=" the AI & Data Science Club!"))
   print('Ready!')
 
 async def send_email(subject, message_content):
