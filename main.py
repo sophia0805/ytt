@@ -520,8 +520,8 @@ def email_webhook():
         date = processed_at if processed_at else None
         print(f'[email_webhook] Date: {date}')
         
-        # Get attachments
-        attachments = data.get('attachments', [])
+        # Get attachments (ensure it's always a list, even if None)
+        attachments = data.get('attachments') or []
         print(f'[email_webhook] Attachments: {len(attachments)}')
         
         # Get additional info
