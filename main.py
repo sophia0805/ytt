@@ -647,16 +647,12 @@ def run_bot():
                 traceback.print_exc()
                 # Don't raise - we want the loop to keep running
 
-        async def heartbeat():
-            while True:
-                print(f'[Heartbeat] Bot loop is alive. Time: {datetime.now()}')
-                await asyncio.sleep(5)
+
         
         # Schedule client.start() as a task, then run the loop forever
         # This allows run_coroutine_threadsafe to work
         print(f'[run_bot] Creating client.start() task...')
         task = loop.create_task(start_bot())
-        loop.create_task(heartbeat())
         print(f'[run_bot] client.start() task created: {task}')
         print(f'[run_bot] Task done: {task.done()}, cancelled: {task.cancelled()}')
         print(f'[run_bot] Running loop forever...')
