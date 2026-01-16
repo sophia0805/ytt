@@ -252,35 +252,11 @@ async def send_email_to_discord(from_email, subject, body, date=None, attachment
         
         if webhook:
             print(f'[send_email_to_discord] Using webhook: {webhook.name} (ID: {webhook.id})')
-            # Discord message limit is 2000 characters
-            if len(full_message) > 2000:
-                print(f'[send_email_to_discord] Message too long, splitting into chunks...')
-                # Split into chunks
-                chunks = []
-                current_chunk = ""
-                for line in full_message.split('\n'):
-                    if len(current_chunk) + len(line) + 1 <= 1900:
-                        current_chunk += line + '\n'
-                    else:
-                        if current_chunk:
-                            chunks.append(current_chunk.strip())
-                        current_chunk = line + '\n'
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                print(f'[send_email_to_discord] Split into {len(chunks)} chunk(s)')
-                
-                print(f'[send_email_to_discord] Sending first chunk ({len(chunks[0])} chars)...')
-                await webhook.send(content=chunks[0])
-                for i, chunk in enumerate(chunks[1:], 1):
-                    print(f'[send_email_to_discord] Sending chunk {i+1}/{len(chunks)} ({len(chunk)} chars)...')
-                    await webhook.send(content=chunk)
-            else:
-                print(f'[send_email_to_discord] Sending single message...')
-                await webhook.send(content=full_message)
+            print(f'[send_email_to_discord] Sending single message...')
+            await webhook.send(content=full_message)
             print(f'[send_email_to_discord] Message sent successfully via webhook')
         else:
             print(f'[send_email_to_discord] WARNING: Could not use webhook, sending as bot instead')
-            # Fallback: send as bot if webhook creation fails
             if len(full_message) > 2000:
                 print(f'[send_email_to_discord] Message too long, splitting into chunks (bot fallback)...')
                 chunks = []
@@ -315,7 +291,7 @@ async def send_email_to_discord(from_email, subject, body, date=None, attachment
 
 @client.event
 async def on_message(message):
-  if message.author == client.user:
+  if message.author.bot:
     return
   # Check if message is in the specific guild
   if message.guild and message.guild.id == 1405628370301091860:
