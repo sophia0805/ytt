@@ -647,13 +647,14 @@ def run_bot():
         bot_loop = loop
         
         print(f'[run_bot] Event loop created: {loop}')
-        print(f'[run_bot] Event loop running: {loop.is_running()}')
         print(f'[run_bot] Bot loop stored globally: {bot_loop is not None}')
         
-        # Use start() instead of run() so we control the loop
-        print(f'[run_bot] Calling client.start(token)...')
-        loop.run_until_complete(client.start(token))
-        print(f'[run_bot] client.start() completed (this shouldn\'t normally happen)')
+        # Schedule client.start() as a task, then run the loop forever
+        # This allows run_coroutine_threadsafe to work
+        print(f'[run_bot] Creating client.start() task...')
+        loop.create_task(client.start(token))
+        print(f'[run_bot] client.start() task created, running loop forever...')
+        loop.run_forever()
         
     except Exception as e:
         print(f"[run_bot] ERROR starting Discord bot: {e}")
