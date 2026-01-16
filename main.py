@@ -631,20 +631,38 @@ def not_found(e):
 
 def run_bot():
     """Run Discord bot in background thread"""
+    global bot_loop
     print(f'[run_bot] Starting Discord bot...')
     print(f'[run_bot] Thread: {threading.current_thread().name}')
     print(f'[run_bot] Token present: {bool(token)}')
+    
     try:
         if not token:
             print("[run_bot] ERROR: Discord token not found, bot will not start")
             return
-        print(f'[run_bot] Calling client.run(token)...')
-        client.run(token)
-        print(f'[run_bot] client.run() returned (this shouldn\'t normally happen)')
+        
+        # Create a new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        bot_loop = loop
+        
+        print(f'[run_bot] Event loop created: {loop}')
+        print(f'[run_bot] Event loop running: {loop.is_running()}')
+        print(f'[run_bot] Bot loop stored globally: {bot_loop is not None}')
+        
+        # Use start() instead of run() so we control the loop
+        print(f'[run_bot] Calling client.start(token)...')
+        loop.run_until_complete(client.start(token))
+        print(f'[run_bot] client.start() completed (this shouldn\'t normally happen)')
+        
     except Exception as e:
         print(f"[run_bot] ERROR starting Discord bot: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        if 'loop' in locals() and not loop.is_closed():
+            print(f'[run_bot] Closing event loop...')
+            loop.close()
 
 def start_bot_thread():
     print(f'[start_bot_thread] Starting bot thread...')
