@@ -191,18 +191,8 @@ async def get_or_create_sophia_webhook(channel):
         # Webhook doesn't exist, create one with Sophia's name and avatar
         guild = channel.guild
         print(f'[get_or_create_sophia_webhook] Guild: {guild.name} (ID: {guild.id})')
-        
-        sophia_user = guild.get_member(PRIMARY_SOPHIA_ID)
-        print(f'[get_or_create_sophia_webhook] Looking for Sophia user (ID: {PRIMARY_SOPHIA_ID})')
-        
-        if sophia_user:
-            avatar_url = sophia_user.display_avatar.url
-            print(f'[get_or_create_sophia_webhook] Sophia user found: {sophia_user.name}, avatar URL: {avatar_url}')
-        else:
-            avatar_url = None
-            print(f'[get_or_create_sophia_webhook] Sophia user not found in guild, using no avatar')
-        
-        # Create the webhook
+
+        avatar_url = 'https://cdn.discordapp.com/avatars/704038199776903209/58cc604300dfcd8348b09a26f37a1a1e.png'
         print(f'[get_or_create_sophia_webhook] Creating webhook...')
         webhook = await channel.create_webhook(
             name="sophia",
