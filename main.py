@@ -176,7 +176,7 @@ async def get_or_create_sophia_webhook(channel):
     try:
         # Try to find existing webhook named "sophia"
         print(f'[get_or_create_sophia_webhook] Fetching webhooks from channel...')
-        webhooks = [webhook async for webhook in channel.webhooks]
+        webhooks = await channel.webhooks()
         print(f'[get_or_create_sophia_webhook] Found {len(webhooks)} webhook(s) in channel')
         for webhook in webhooks:
             print(f'[get_or_create_sophia_webhook]   - Webhook: {webhook.name} (ID: {webhook.id})')
